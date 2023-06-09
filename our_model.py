@@ -37,7 +37,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     go = Ontology(go_file, with_rels=True)
     terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file)
     n_terms = len(terms_dict)
-    net = DGCNNModel(n_terms).to(device)
+    net = ourModel(n_terms).to(device)
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
     test_features, test_labels = test_data
@@ -170,7 +170,7 @@ def compute_roc(labels, preds):
     return roc_auc
 
 
-class DGCNNModel(nn.Module):
+class ourModel(nn.Module):
 
     def __init__(self, n_terms):
         super().__init__()
