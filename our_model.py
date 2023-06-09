@@ -6,7 +6,6 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from sklearn.metrics import roc_curve, auc
-import copy
 import math
 from torch_utils import FastTensorDataLoader
 import csv
@@ -17,7 +16,7 @@ from torch.optim.lr_scheduler import MultiStepLR
     '--data-root', '-dr', default='data_cafa3',
     help='Prediction model')
 @ck.option(
-    '--ont', '-ont', default='mf',
+    '--ont', '-ont', default='bp',
     help='Prediction model')
 @ck.option(
     '--batch-size', '-bs', default=20,
@@ -121,54 +120,37 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
             test_loss /= test_steps
+
         preds = preds.reshape(-1, n_terms)
         preds = propagate_preds(np.array(preds), terms_dict, go)
         roc_auc = compute_roc(test_labels, preds)
         print(f'Ontology - {ont}, Test Loss - {test_loss}, AUC - {roc_auc}')
 
-    # preds = list(preds)
-    # preds = propagate_preds(np.array(preds), terms_dict, go)
     test_df['preds'] = list(preds)
     test_df.to_pickle(out_file)
 
 
 def propagate_preds(preds, terms_dict, go):
-    new_preds = copy.deepcopy(preds)
+
     go_terms = list(terms_dict.keys())
     go_ancestors = {}
 
     for go_term in go_terms:
         ancestors = go.get_anchestors(go_term)
         ancestors = [i for i in ancestors if i in go_terms]
-        ancestors.append(go_term)
         go_ancestors[go_term] = ancestors
 
     for i in range(len(preds)):
         prop_annots = {}
         for go_id, j in terms_dict.items():
-            score = preds[i][j]
             ancestors = go_ancestors[go_id]
-            ancestor_scores = [new_preds[i][terms_dict[a]] for a in ancestors]
+            ancestor_scores = [preds[i][terms_dict[a]] for a in ancestors]
             avg_ancestor_score = np.mean(ancestor_scores)
-            above_avg_count = 0
-            below_avg_count = 0
-            for a in ancestors:
-                if new_preds[i][terms_dict[a]] >= avg_ancestor_score:
-                    above_avg_count += 1
-                else:
-                    below_avg_count += 1
-
-            if above_avg_count > below_avg_count:
-
+            score = preds[i][j]
+            if 2 * avg_ancestor_score >= score >= avg_ancestor_score:
                 for sup_go in go.get_anchestors(go_id):
                     if sup_go in prop_annots:
                         prop_annots[sup_go] = max(prop_annots[sup_go], score)
-                    else:
-                        prop_annots[sup_go] = score
-            else:
-                for sup_go in go.get_anchestors(go_id):
-                    if sup_go in prop_annots:
-                        prop_annots[sup_go] = min(prop_annots[sup_go], score)
                     else:
                         prop_annots[sup_go] = score
 
@@ -176,7 +158,9 @@ def propagate_preds(preds, terms_dict, go):
             if go_id in terms_dict:
                 preds[i][terms_dict[go_id]] = score
 
-        return new_preds
+    return preds
+
+
 
 
 def compute_roc(labels, preds):
